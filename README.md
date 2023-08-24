@@ -1,6 +1,8 @@
 # cardscraper
 Scraping Pro Wrestling data
 
+![wrestler ratings](wrestler_ratings_250.png)
+
 ## Scripts
 * cagematch_scrape.R - Scrapes match information for every episode of SmackDown & RAW
 * wrestlingdata_scrape.R - This website tracks TV rating info that CAGEMATCH does not
