@@ -1,0 +1,26 @@
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+
+# Large data files (stored in data branch)
+*.Rds
+wrestler_summary_stats.csv
+match_predictions.csv
+
+# Backup files
+*.bak
+
+# Keep these tracked
+!renv.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+*.Rproj.user
+
+# Claude Code local settings
+.claude/

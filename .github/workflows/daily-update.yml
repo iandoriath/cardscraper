@@ -1,0 +1,74 @@
+name: Daily Wrestling Data Update
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (1 AM EST / 10 PM PST)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout data branch
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: data-files
+        continue-on-error: true
+
+      - name: Copy existing data files
+        run: |
+          if [ -d "data-files" ]; then
+            cp data-files/*.Rds . 2>/dev/null || true
+            cp data-files/*.csv . 2>/dev/null || true
+            echo "Copied existing data files"
+          else
+            echo "No existing data branch found - will create fresh"
+          fi
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.3.0'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: r-packages-${{ hashFiles('renv.lock') }}
+          restore-keys: r-packages-
+
+      - name: Install R packages
+        run: |
+          Rscript -e "install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash'), repos='https://cloud.r-project.org')"
+
+      - name: Run daily update
+        run: Rscript daily_update.R
+
+      - name: Prepare data branch
+        run: |
+          mkdir -p data-output
+          cp *.Rds data-output/ 2>/dev/null || true
+          cp wrestler_summary_stats.csv data-output/ 2>/dev/null || true
+          cp match_predictions.csv data-output/ 2>/dev/null || true
+
+      - name: Push to data branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./data-output
+          publish_branch: data
+          force_orphan: false
+          commit_message: "Update wrestling data - ${{ github.run_id }}"
