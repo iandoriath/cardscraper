@@ -45,7 +45,7 @@ jobs:
 
       - name: Install R packages
         run: |
-          Rscript -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash', 'rmarkdown', 'flexdashboard', 'plotly', 'DT', 'htmlwidgets', 'scales'))"
+          Rscript -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash', 'mvtnorm', 'TrueSkillThroughTime', 'plotly', 'rmarkdown', 'flexdashboard', 'DT', 'htmlwidgets', 'scales'))"
 
       - name: Run daily update
         run: Rscript daily_update.R
