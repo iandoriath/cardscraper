@@ -16,21 +16,21 @@ jobs:
         with:
           ref: main
 
-      - name: Checkout data branch
+      - name: Checkout gh-pages branch for existing data
         uses: actions/checkout@v4
         with:
-          ref: data
-          path: data-files
+          ref: gh-pages
+          path: gh-pages-files
         continue-on-error: true
 
       - name: Copy existing data files
         run: |
-          if [ -d "data-files" ]; then
-            cp data-files/*.Rds . 2>/dev/null || true
-            cp data-files/*.csv . 2>/dev/null || true
-            echo "Copied existing data files"
+          if [ -d "gh-pages-files" ]; then
+            cp gh-pages-files/*.Rds . 2>/dev/null || true
+            cp gh-pages-files/*.csv . 2>/dev/null || true
+            echo "Copied existing data files from gh-pages"
           else
-            echo "No existing data branch found - will create fresh"
+            echo "No existing gh-pages branch found - will create fresh"
           fi
 
       - name: Setup R
@@ -52,23 +52,28 @@ jobs:
 
       - name: Install R packages
         run: |
-          Rscript -e "install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash'), repos='https://cloud.r-project.org')"
+          Rscript -e "install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash', 'rmarkdown', 'flexdashboard', 'plotly', 'DT', 'htmlwidgets', 'scales'), repos='https://cloud.r-project.org')"
 
       - name: Run daily update
         run: Rscript daily_update.R
 
-      - name: Prepare data branch
+      - name: Build dashboard
         run: |
-          mkdir -p data-output
-          cp *.Rds data-output/ 2>/dev/null || true
-          cp wrestler_summary_stats.csv data-output/ 2>/dev/null || true
-          cp match_predictions.csv data-output/ 2>/dev/null || true
+          Rscript -e "rmarkdown::render('dashboard.Rmd', output_file='index.html')"
 
-      - name: Push to data branch
+      - name: Prepare site output
+        run: |
+          mkdir -p site-output
+          cp index.html site-output/
+          cp *.Rds site-output/ 2>/dev/null || true
+          cp wrestler_summary_stats.csv site-output/ 2>/dev/null || true
+          cp match_predictions.csv site-output/ 2>/dev/null || true
+
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./data-output
-          publish_branch: data
+          publish_dir: ./site-output
+          publish_branch: gh-pages
           force_orphan: false
-          commit_message: "Update wrestling data - ${{ github.run_id }}"
+          commit_message: "Update dashboard - ${{ github.run_id }}"

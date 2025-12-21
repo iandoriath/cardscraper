@@ -1,0 +1,287 @@
+---
+title: "CardScraper Wrestling Analytics"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: cosmo
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(plotly)
+library(DT)
+library(scales)
+
+# Load data files
+df_lc <- read_rds('df_lc.Rds')
+wrestler_names <- read_rds('wrestler_names.Rds')
+
+# Try to load summary stats if available
+summary_stats <- tryCatch(
+  read_csv('wrestler_summary_stats.csv', show_col_types = FALSE),
+  error = function(e) NULL
+)
+
+# Define date origin (adjust if different in your data)
+date_origin <- as.Date("1984-01-01")
+
+# Get wrestlers with enough appearances
+top_n_wrestlers <- df_lc %>%
+  group_by(wrestler_id) %>%
+  summarize(n = n(), .groups = 'drop') %>%
+  filter(n >= 25) %>%
+  pull(wrestler_id)
+
+# Current rankings data
+current_rankings <- df_lc %>%
+  filter(time >= max(time) - 52) %>%
+  group_by(wrestler_id) %>%
+  mutate(appearances = n()) %>%
+  filter(appearances >= 10) %>%
+  slice_max(time, n = 1) %>%
+  ungroup() %>%
+  left_join(wrestler_names, by = 'wrestler_id') %>%
+  drop_na(wrestler_names) %>%
+  arrange(desc(mu)) %>%
+  mutate(
+    lower = mu - qt(0.975, df = appearances - 1) * (sigma / sqrt(appearances)),
+    upper = mu + qt(0.975, df = appearances - 1) * (sigma / sqrt(appearances)),
+    status = case_when(
+      mu >= 1.5 ~ 'Superstars',
+      mu >= 0 ~ 'Midcarders',
+      TRUE ~ 'Jobbers'
+    ),
+    rank = row_number()
+  )
+```
+
+Skill Evolution
+=====================================
+
+Column {data-width=1000}
+-------------------------------------
+
+### Wrestler Skill Estimates Over Time
+
+```{r skill-plot, fig.width=12, fig.height=8}
+# Prepare data for plotting
+plot_data <- df_lc %>%
+  mutate(time = date_origin + weeks(floor(time))) %>%
+  filter(wrestler_id %in% top_n_wrestlers) %>%
+  left_join(wrestler_names, by = 'wrestler_id')
+
+# Create the ggplot
+p <- plot_data %>%
+  ggplot(aes(x = time, y = mu, group = wrestler_id, color = wrestler_names, text = wrestler_names)) +
+  geom_line(alpha = 0.4, show.legend = FALSE) +
+  geom_hline(yintercept = 0, linewidth = 0.2, color = 'black') +
+  labs(
+    x = "Date",
+    y = "Estimated Skill (BK)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+# Add interactivity with plotly
+ggplotly(p, tooltip = "text") %>%
+  layout(
+    title = list(text = "Bayesian Kayfabe Estimation of Wrestler Skill", x = 0.5),
+    xaxis = list(title = "Year"),
+    yaxis = list(title = "Bayesian Kayfabe (BK) Estimated Skill"),
+    hovermode = "closest"
+  ) %>%
+  config(scrollZoom = TRUE)
+```
+
+Current Rankings
+=====================================
+
+Column {data-width=500}
+-------------------------------------
+
+### Rankings Visualization
+
+```{r rankings-plot, fig.width=8, fig.height=10}
+p_rankings <- current_rankings %>%
+  ggplot() +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 7)) +
+  geom_segment(aes(color = mu, x = lower, xend = upper,
+                   y = fct_reorder(wrestler_names, mu, .desc = FALSE))) +
+  geom_point(aes(color = mu, x = mu,
+                 y = fct_reorder(wrestler_names, mu, .desc = FALSE))) +
+  scale_color_gradient2(low = "red", mid = "gray", high = "blue", midpoint = 0) +
+  labs(
+    x = "Estimated Skill with 95% CI",
+    y = NULL,
+    title = "Current Wrestler Rankings"
+  ) +
+  facet_wrap(~status, scales = 'free_y', ncol = 1) +
+  theme(legend.position = "none")
+
+ggplotly(p_rankings, height = 800)
+```
+
+Column {data-width=500}
+-------------------------------------
+
+### Rankings Table
+
+```{r rankings-table}
+current_rankings %>%
+  select(
+    Rank = rank,
+    Wrestler = wrestler_names,
+    `Rating (μ)` = mu,
+    `Uncertainty (σ)` = sigma,
+    Tier = status,
+    Appearances = appearances
+  ) %>%
+  mutate(
+    `Rating (μ)` = round(`Rating (μ)`, 2),
+    `Uncertainty (σ)` = round(`Uncertainty (σ)`, 2)
+  ) %>%
+  datatable(
+    options = list(
+      pageLength = 25,
+      scrollY = "600px",
+      dom = 'ftp'
+    ),
+    filter = 'top',
+    rownames = FALSE
+  )
+```
+
+Statistics
+=====================================
+
+Row {data-height=150}
+-------------------------------------
+
+### Total Wrestlers Tracked
+
+```{r}
+total_wrestlers <- n_distinct(df_lc$wrestler_id)
+valueBox(comma(total_wrestlers), icon = "fa-users", color = "primary")
+```
+
+### Active Wrestlers (Last Year)
+
+```{r}
+active_wrestlers <- df_lc %>%
+  filter(time >= max(time) - 52) %>%
+  n_distinct(.$wrestler_id)
+valueBox(comma(active_wrestlers), icon = "fa-user-check", color = "success")
+```
+
+### Data Timespan
+
+```{r}
+min_date <- min(df_lc$time)
+max_date <- max(df_lc$time)
+years_span <- round((max_date - min_date) / 52, 1)
+valueBox(paste(years_span, "years"), icon = "fa-calendar", color = "info")
+```
+
+### Last Updated
+
+```{r}
+valueBox(format(Sys.Date(), "%B %d, %Y"), icon = "fa-clock", color = "warning")
+```
+
+Row {data-height=425}
+-------------------------------------
+
+### Top 10 Rated Wrestlers (All-Time Peak)
+
+```{r}
+df_lc %>%
+  group_by(wrestler_id) %>%
+  summarize(
+    peak_rating = max(mu),
+    peak_time = time[which.max(mu)],
+    .groups = 'drop'
+  ) %>%
+  left_join(wrestler_names, by = 'wrestler_id') %>%
+  drop_na(wrestler_names) %>%
+  arrange(desc(peak_rating)) %>%
+  head(10) %>%
+  mutate(
+    peak_year = year(date_origin + weeks(floor(peak_time))),
+    peak_rating = round(peak_rating, 2)
+  ) %>%
+  select(
+    Wrestler = wrestler_names,
+    `Peak Rating` = peak_rating,
+    `Peak Year` = peak_year
+  ) %>%
+  datatable(
+    options = list(dom = 't', pageLength = 10),
+    rownames = FALSE
+  )
+```
+
+### Top 10 Most Active (Last Year)
+
+```{r}
+df_lc %>%
+  filter(time >= max(time) - 52) %>%
+  group_by(wrestler_id) %>%
+  summarize(appearances = n(), .groups = 'drop') %>%
+  left_join(wrestler_names, by = 'wrestler_id') %>%
+  drop_na(wrestler_names) %>%
+  arrange(desc(appearances)) %>%
+  head(10) %>%
+  select(
+    Wrestler = wrestler_names,
+    Appearances = appearances
+  ) %>%
+  datatable(
+    options = list(dom = 't', pageLength = 10),
+    rownames = FALSE
+  )
+```
+
+Row {data-height=425}
+-------------------------------------
+
+### Current Superstars (μ ≥ 1.5)
+
+```{r}
+current_rankings %>%
+  filter(status == "Superstars") %>%
+  mutate(mu = round(mu, 2), sigma = round(sigma, 2)) %>%
+  select(
+    Wrestler = wrestler_names,
+    Rating = mu,
+    Uncertainty = sigma,
+    Appearances = appearances
+  ) %>%
+  datatable(
+    options = list(dom = 't', pageLength = 15, scrollY = "300px"),
+    rownames = FALSE
+  )
+```
+
+### About This Dashboard
+
+**CardScraper** analyzes WWE match data using Bayesian skill modeling (TrueSkill2).
+
+**Key Metrics:**
+
+- **μ (mu)**: Estimated skill level. Higher = stronger booking.
+- **σ (sigma)**: Uncertainty in the estimate. Lower = more confident.
+- **BK (Bayesian Kayfabe)**: Our skill unit, representing expected match outcome advantage.
+
+**Tier Definitions:**
+
+- **Superstars** (μ ≥ 1.5): Top-tier performers, main event level
+- **Midcarders** (0 ≤ μ < 1.5): Mid-card competitors
+- **Jobbers** (μ < 0): Enhancement talent
+
+Data sourced from [Cagematch.net](https://www.cagematch.net). Updated daily.
+
+[View Source on GitHub](https://github.com)
