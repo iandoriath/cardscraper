@@ -26,41 +26,37 @@ jobs:
       - name: Copy existing data files
         run: |
           if [ -d "gh-pages-files" ]; then
-            cp gh-pages-files/*.Rds . 2>/dev/null || true
+            cp gh-pages-files/*.json . 2>/dev/null || true
             cp gh-pages-files/*.csv . 2>/dev/null || true
             echo "Copied existing data files from gh-pages"
+            ls -la *.json *.csv 2>/dev/null || echo "No data files found"
           else
             echo "No existing gh-pages branch found - will create fresh"
           fi
 
-      - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          r-version: '4.3.0'
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev pandoc
-
-      - name: Install R packages
-        run: |
-          Rscript -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); install.packages(c('tidyverse', 'lubridate', 'rvest', 'hash', 'mvtnorm', 'TrueSkillThroughTime', 'plotly', 'rmarkdown', 'flexdashboard', 'DT', 'htmlwidgets', 'scales'))"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Run daily update
-        run: Rscript daily_update.R
+        run: python daily_update.py
 
-      - name: Build dashboard
-        run: |
-          Rscript -e "rmarkdown::render('dashboard.Rmd', output_file='index.html')"
+      - name: Generate dashboard
+        run: python generate_dashboard.py
 
       - name: Prepare site output
         run: |
           mkdir -p site-output
           cp index.html site-output/
-          cp *.Rds site-output/ 2>/dev/null || true
-          cp wrestler_summary_stats.csv site-output/ 2>/dev/null || true
-          cp match_predictions.csv site-output/ 2>/dev/null || true
+          cp *.json site-output/ 2>/dev/null || true
+          cp *.csv site-output/ 2>/dev/null || true
+          echo "Site output contents:"
+          ls -la site-output/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
